@@ -33,9 +33,11 @@ Notation "A <= B" := (Included A B).
 Notation "A == B" := (Same_set A B).
 Notation "A && B" := (Intersection A B).
 Notation "A || B" := (Union A B).
-Notation "~ A" := (Complement A).
+Notation "~~ A" := (Complement A).
+Notation "x /in A" := (In A x) (at level 50).
+Definition pow:= Ensemble.
 
-Definition pow := Ensemble.
+
 
 Class Upward {T} (o: relation T) (u: pow T) := {
   upward (s t: T) : o s t -> u s -> u t;
@@ -54,7 +56,7 @@ Class Directed {T} (o: relation T) (d: pow T) := {
 }.
 
 Class Filter {T} (f: pow (pow T)) := {
-  filter_nonempty :> Nonempty f;
+  filter_nonempty :> Nonempty f; (* => implies having total set with upward property *)
   filter_upward :> Upward Included f;
   filter_directed :> Directed Included f;
   filter_preserve_intersection (s t: pow T) : f s -> f t -> f (s && t);
@@ -72,6 +74,54 @@ Class Interior {T} (i: pow T -> pow T) := {
   interior_preserve_intersection (s t: pow T) : i (s && t) == (i s) && (i t);
 }.
 
+Lemma isotonic_implies_intersection T (i: pow T -> pow T): (forall s t: pow T, s <= t -> i s <= i t) -> (forall s t, i (s && t) <= (i s) && (i t)).
+move => isotonic.
+have: forall s t: pow T, s && t <= s.
+- move => s t x stx.
+  by case: stx.
+move => incr.
+have: forall s t: pow T, s && t <= t.
+- move => s t x stx.
+  by case: stx.
+move => incl.
+move => s t x istx.
+split.
+- by apply: (isotonic (s && t) s (incr s t)).
+- by apply: (isotonic (s && t) t (incl s t)).
+Qed.
+
+
+Lemma and_in T (s t: pow T): forall x: T, s x -> t x -> (s && t) x.
+move => x sx tx.
+by constructor.
+Qed.
+
+Lemma iso2 (p : Prop -> Prop): (forall a b: Prop, (a -> b) -> p a -> p b) -> (forall a:Prop, p a -> a) -> (forall a b: Prop, (p a) /\ (p b) -> p (a /\ b)).
+move => iso inc a b pab.
+case: pab => pa pb.
+move: (inc a pa) => ta.
+move: (inc b pb) => tb.
+apply: (iso (a) (a /\ b)).
+move => ta2.
+constructor.
+by exact.
+by exact.
+by exact.
+Qed.
+
+Lemma iso3 (p : Prop -> Prop): (forall a b: Prop, (a -> b) -> p a -> p b) -> (forall a:Prop, p a -> a) -> (forall a b: Prop, p (a /\ b) -> (p a) /\ (p b)).
+move => iso inc a b pab.
+constructor.
+apply: (iso (a /\ b) a).
+move=> ab.
+by case ab.
+exact pab.
+apply: (iso (a /\ b) b).
+move=> ab.
+by case ab.
+exact pab.
+Qed.
+
 Class Closure {T} (c: pow T -> pow T) := {
   closure_preserve_empty : Empty_set == c Empty_set;
   closure_extensivity (s: pow T) : s <= c s;
@@ -79,10 +129,27 @@ Class Closure {T} (c: pow T -> pow T) := {
   closure_preserve_union (s t: pow T) : c (s || t) == (c s) || (c t);
 }.
 
+
+Lemma intersection_with_complement_of_itself_is_empty {T} (c: pow T -> pow T) : forall s: pow T, (s && ~~s) <= Empty_set.
+move => s x sinsx.
+case: sinsx => p sx nsx.
+exfalso.
+by apply nsx.
+Qed.
+
+Lemma union_complement_total_classic {T}: (forall s: pow T, Full_set <= (s || ~~s)) -> (forall s: pow T, (~~~~s) <= s).
+have: (forall (v: pow T), (Full_set <= v) -> forall x: T, In v x).
+- move => s p x.
+  by apply p.
+move => i u s x.
+move: (i (s || ~~s) (u s) x) => sucsx.
+by case: x / sucsx => x sx ccsx.
+Qed.
+
 Definition n2i {T} (v: T -> pow (pow T)) (s: pow T) (x:T) := v x s.
 Definition i2n {T} (i: pow T -> pow T) (x:T) (s: pow T) := i s x.
-Definition i2c {T} (i: pow T -> pow T) (s: pow T) := ~ (i (~ s)).
-Definition c2i {T} (c: pow T -> pow T) (s: pow T) := ~ (c (~ s)).
+Definition i2c {T} (i: pow T -> pow T) (s: pow T) := ~~ (i (~~ s)).
+Definition c2i {T} (c: pow T -> pow T) (s: pow T) := ~~ (c (~~ s)).
 
 Lemma projl {T} : forall s t : pow T, s && t <= s.
 Proof.
@@ -95,8 +162,6 @@ Proof.
 move => s t x stx.
 by case: stx => y sx tx.
 Qed.
-
-
 
 Theorem neighborhood_derives_interior {T} (n: T->pow (pow T)): Neighborhood n -> Interior (n2i n).
 Proof.
@@ -133,13 +198,11 @@ Proof.
         apply: (upward (s && t) t projr).
         by apply: nxst.
     + move => x nsntx.
+      case: x /nsntx => x l r.
       move: (filters x) => filter.
       case: filter => nonempty upward directed intersection; case: upward => upward; case: nonempty => nonempty; case: directed => directed.
-      case: nsntx => y l r.
-      move: (filters y) => filter.
-      case: filter => nonemptyy upwardy directedy intersectiony; case: upwardy => upwardy; case: nonemptyy => nonemptyy; case: directedy => directedy.
-      by apply: (intersectiony s t l r).
-Qed.
+      by apply: (intersection s t l r).
+Qed. 
 
 Theorem interior_derives_neighborhood {T} (i: pow T -> pow T): Interior i -> Neighborhood (i2n i).
 Proof.
@@ -173,14 +236,14 @@ Proof.
     by apply: intensive.
 Qed.
 
-Theorem contra {T} (s t: pow T) : s <= t -> (~t) <= (~s).
+Theorem contra {T} (s t: pow T) : s <= t -> ~~t <= ~~s.
 Proof.
   move => s_implies_t x ctx sx.
   apply: ctx.
   by apply: s_implies_t.
 Qed.
 
-Theorem contra2 {T} (s t: pow T) : s <= (~t) -> t <= (~s).
+Theorem contra2 {T} (s t: pow T) : s <= ~~t -> t <= ~~s.
 Proof.
   move => s_implies_ct x tx sx.
   by apply: (s_implies_ct x sx).
@@ -198,12 +261,12 @@ move => s t x stx.
 by constructor 2.
 Qed.
 
-Lemma b {T} : forall s: pow T, s <= (~(~s)).
+Lemma b {T} : forall s: pow T, s <= ~~~~s.
 move => a x ax cax.
 by contradiction cax.
 Qed.
 
-Theorem demorgan1 {T} (s t : pow T) : (~(s || t)) <= (~s) && (~t).
+Theorem demorgan1 {T} (s t : pow T) : (~~(s || t)) <= (~~s) && (~~t).
 Proof.
   move => x nstx.
   constructor.
@@ -216,26 +279,26 @@ Proof.
 Qed.
 
 
-Axiom cc: forall (T:Type) (s: pow T), (~(~s)) <= s.
-Theorem pem {T} (s : pow T) : (~s) && s <= Empty_set.
+Axiom cc: forall (T:Type) (s: pow T), ~~~~s <= s.
+Theorem pem {T} (s : pow T) : (~~s) && s <= Empty_set.
 move => x nss.
 case nss => y nsy sy.
 by contradiction nsy.
 Qed.
-Theorem dual {T} (s t : pow T) : (~s) <= (~t) -> t <= s. (* classic *)
+Theorem dual {T} (s t : pow T) : ~~s <= ~~t -> t <= s. (* classic *)
 Proof.
 move => l x g.
 apply: (cc (s:=s)).
 move => a.
 by apply: (l x a g).
 Qed.
-Theorem em {T}: (~Full_set (U:=T) ) <= Empty_set.
+Theorem em {T}: (~~Full_set (U:=T) ) <= Empty_set.
 move => x nfx.
 contradiction nfx.
 constructor.
 Qed.
 
-Theorem dual2 {T} (s t : pow T) : (~ s && t) <= (~ s) || (~ t).  (* classic *)
+Theorem dual2 {T} (s t : pow T) : ~~ (s && t) <= (~~s) || (~~t).  (* classic *)
 Proof.
   move=> x nstx.
   apply: cc.
@@ -251,7 +314,7 @@ Proof.
     apply: nnsntx.
     by constructor 2.
 Qed.
-Theorem dual3 {T} (s t : pow T) : (~ s || t) <= (~ s) && (~t).
+Theorem dual3 {T} (s t : pow T) : ~~ (s || t) <= (~~ s) && (~~t).
 Proof.
   move => x nstx.
   constructor.
@@ -263,7 +326,7 @@ Proof.
     by apply: injr tx.
 Qed.
 
-Theorem dual4 {T} (s t : pow T) : ((~ s) && (~t)) <= (~ s || t).
+Theorem dual4 {T} (s t : pow T) : ((~~ s) && (~~t)) <= ~~ (s || t).
 Proof.
   move => x nsntx.
   destruct nsntx as [x L R].
@@ -279,8 +342,8 @@ Proof.
   move => x isx ninnsx.
   apply: ninnsx.
   destruct interior.
-  move: (interior_isotonic0 s (~(~s))) => d.
-  assert (s <= (~(~s))).
+  move: (interior_isotonic0 s (~~~~s)) => d.
+  assert (s <= (~~~~s)).
   - move => v sv nsv.
     by apply: nsv.
   by apply: (d H).
@@ -293,11 +356,11 @@ Proof.
   case: interior => preserve_total intensive isotonic intersection.
   assert (extensivity: forall u: pow T, u <= i2c i u).
   + move => u x ux icux.
-    by apply: (intensive (~u) x icux).
+    by apply: (intensive (~~u) x icux).
   assert (isotonic_c: forall s t : pow T, s <= t -> i2c i s <= i2c i t).
   + move => s t s_implies_t.
     apply: contra.
-    apply: (isotonic (~t) (~s)).
+    apply: (isotonic (~~t) (~~s)).
     by apply: contra. 
   constructor.
   - constructor.
@@ -306,7 +369,7 @@ Proof.
     + move => x iempx.
       contradiction iempx.
       rewrite /In.
-      assert (empfull: i Full_set <= i (~Empty_set)).
+      assert (empfull: i Full_set <= i (~~Empty_set)).
       * apply: isotonic.
         move => y fully empy.
         by contradiction empy.
@@ -325,14 +388,14 @@ Proof.
       apply: dual2. 
       move => nnsnst.
       apply: nst.
-      apply: (isotonic ((~ s) && (~t)) (~s||t)).
+      apply: (isotonic ((~~ s) && (~~t)) (~~(s||t))).
       by apply: dual4.
-      by apply: (proj2 (intersection (~s) (~t))).
+      by apply: (proj2 (intersection (~~s) (~~t))).
     + rewrite /i2c.
       move => x nst instx.
       destruct nst as [x p| x p].
       - apply: p.
-        apply: (isotonic (~ s || t) (~s)).
+        apply: (isotonic (~~( s || t)) (~~s)).
         apply: dual.
         move => p mm mmm.
         apply mm.
@@ -341,7 +404,7 @@ Proof.
         by constructor 1.
         by [].
       - apply: p.
-        apply: (isotonic (~ s || t) (~t)).
+        apply: (isotonic (~~ (s || t)) (~~t)).
         apply: dual.
         move => p mm mmm.
         apply mm.
